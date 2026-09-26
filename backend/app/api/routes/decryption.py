@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -48,6 +49,7 @@ def decrypt_document(
         id=session_id,
         document_id=document_id,
         recipient_id=recipient_id,
+        session_nonce=secrets.token_hex(32),
         watermark_id=watermark_id,
         status="decrypted",
     )

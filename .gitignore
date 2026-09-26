@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+storage/documents/*.json
+storage/keys/*.json
+
+frontend/tsconfig.tsbuildinfo
+storage/decrypted/*.pdf
+
+frontend/node_modules/

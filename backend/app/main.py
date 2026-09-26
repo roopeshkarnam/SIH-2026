@@ -1,25 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import auth, crypto, decryption, documents, forensics, health, provenance, users
 from app.core.config import settings
-from app.api.routes import (
-    auth,
-    crypto,
-    decryption,
-    documents,
-    forensics,
-    health,
-    provenance,
-    users,
-)
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description=(
-        "Cryptographic attribution backend using AES-256-GCM, "
-        "ML-KEM-768, ML-DSA-65, forensic watermark identifiers, "
-        "and a ledger adapter."
+        "Cryptographic attribution backend for multi-recipient encrypted documents. "
+        "Uses AES-256-GCM, ML-KEM-768, ML-DSA-65, session provenance and a ledger adapter."
     ),
 )
 
@@ -47,4 +37,10 @@ def root():
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "running",
+        "pqc": {
+            "kem": settings.pqc_kem_algorithm,
+            "signature": settings.pqc_signature_algorithm,
+        },
+        "watermark_mode": "identifier-mvp",
+        "ledger_mode": "development-adapter" if not settings.ledger_enabled else "fabric",
     }

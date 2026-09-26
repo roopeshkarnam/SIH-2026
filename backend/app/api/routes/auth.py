@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -16,11 +17,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8, max_length=128)
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 
 @router.post("/register")
@@ -39,22 +35,24 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
 
-    return {
-        "user_id": user.id,
-        "username": user.username,
-        "role": user.role,
-    }
+    return {"user_id": user.id, "username": user.username, "role": user.role}
 
 
 @router.post("/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == data.username).first()
-
-    if not user or not pwd_context.verify(data.password, user.password_hash):
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == form_data.username).first()
+    if not user or not pwd_context.verify(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is inactive.")
 
     return {
         "access_token": create_access_token(user.id),
         "token_type": "bearer",
         "user_id": user.id,
+        "username": user.username,
+        "role": user.role,
     }

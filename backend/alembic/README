@@ -1,1 +1,7 @@
-Generic single-database configuration.
+# Database migrations
+
+Run from the project root after creating `.env`:
+
+    alembic upgrade head
+
+The repository does not include database credentials or a populated local database.

@@ -17,6 +17,29 @@ from app.services.hashing import hashing_service
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 
+@router.get("/mine")
+def list_my_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    documents = (
+        db.query(Document)
+        .filter(Document.owner_id == current_user.id)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "document_id": d.id,
+            "filename": d.filename,
+            "document_hash": d.document_hash,
+            "encrypted": d.encrypted,
+            "created_at": d.created_at,
+        }
+        for d in documents
+    ]
+
+
 @router.post("/upload")
 async def upload_document(
     recipient_id: str,
@@ -36,10 +59,10 @@ async def upload_document(
         raise HTTPException(status_code=413, detail="File too large.")
 
     document_id = uuid4().hex
-    encrypted_package = document_crypto_service.encrypt_for_recipient(
-        data,
-        recipient_id,
-    )
+    try:
+        encrypted_package = document_crypto_service.encrypt_for_recipient(data, recipient_id)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     root = Path(settings.storage_root) / "documents"
     root.mkdir(parents=True, exist_ok=True)
