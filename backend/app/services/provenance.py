@@ -16,6 +16,7 @@ class ProvenanceService:
         recipient_id: str,
         session_id: str,
         watermark_id: str,
+        session_nonce: str,
     ) -> dict:
         record = {
             "document_id": document_id,
@@ -23,6 +24,7 @@ class ProvenanceService:
             "recipient_id": recipient_id,
             "session_id": session_id,
             "watermark_id": watermark_id,
+            "session_nonce": session_nonce,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "signature_algorithm": pqc_service.SIGNATURE_ALGORITHM,
         }

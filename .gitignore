@@ -221,6 +221,9 @@ storage/documents/*.json
 storage/keys/*.json
 
 frontend/tsconfig.tsbuildinfo
-storage/decrypted/*.pdf
+# Decrypted plaintext copies (any file type) must never be committed.
+storage/decrypted/*
+!storage/decrypted/.gitkeep
+.vite/
 
 frontend/node_modules/

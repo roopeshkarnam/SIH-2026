@@ -22,6 +22,7 @@ def test_document_crypto_round_trip(tmp_path):
     package = document_crypto_service.encrypt_for_recipient(
         plaintext,
         recipient,
+        "test-document",
     )
     recovered = document_crypto_service.decrypt_for_recipient(
         package,

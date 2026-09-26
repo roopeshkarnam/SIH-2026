@@ -12,7 +12,7 @@ from app.services.pqc import pqc_service
 
 class DocumentCryptoService:
     @staticmethod
-    def encrypt_for_recipient(plaintext: bytes, recipient_id: str) -> dict:
+    def encrypt_for_recipient(plaintext: bytes, recipient_id: str, document_id: str) -> dict:
         document_key = encryption_service.generate_document_key()
         encrypted = encryption_service.encrypt_document(plaintext, document_key)
 
@@ -29,9 +29,11 @@ class DocumentCryptoService:
         public_key = base64.b64decode(key_data["public_key"])
         kem_result = pqc_service.encapsulate(public_key)
 
+        # Domain separation: bind the derived key to this document and recipient.
+        kdf_info = f"SIH-2026-DOCUMENT-WRAP|{document_id}|{recipient_id}"
         wrapping_key = encryption_service.derive_wrapping_key(
             kem_result["shared_secret"],
-            b"SIH-2026-DOCUMENT-WRAP",
+            kdf_info.encode(),
         )
         wrapped_key = encryption_service.wrap_document_key(
             document_key,
@@ -46,6 +48,7 @@ class DocumentCryptoService:
             "ciphertext": base64.b64encode(encrypted.ciphertext).decode(),
             "kem_ciphertext": base64.b64encode(kem_result["ciphertext"]).decode(),
             "wrapped_key": wrapped_key,
+            "kdf_info": kdf_info,
         }
 
     @staticmethod
@@ -57,9 +60,11 @@ class DocumentCryptoService:
             private_key,
             kem_ciphertext,
         )
+        # Older packages were wrapped with the fixed context string.
+        kdf_info = package.get("kdf_info", "SIH-2026-DOCUMENT-WRAP")
         wrapping_key = encryption_service.derive_wrapping_key(
             shared_secret,
-            b"SIH-2026-DOCUMENT-WRAP",
+            kdf_info.encode(),
         )
         document_key = encryption_service.unwrap_document_key(
             package["wrapped_key"],

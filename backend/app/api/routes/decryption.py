@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -59,6 +60,9 @@ def decrypt_document(
     output_root = Path(settings.storage_root) / "decrypted"
     output_root.mkdir(parents=True, exist_ok=True)
     output_path = output_root / f"{session_id}_{document.filename}"
+    is_pdf = document.filename.lower().endswith(".pdf")
+    if is_pdf:
+        plaintext = watermark_service.embed_pdf(plaintext, watermark_id)
     output_path.write_bytes(plaintext)
 
     return {
@@ -68,5 +72,22 @@ def decrypt_document(
         "watermark_id": watermark_id,
         "output_path": str(output_path),
         "document_hash": document.document_hash,
-        "watermark_status": "identifier-generated",
+        "watermark_status": "embedded-in-pdf" if is_pdf else "identifier-only (not a PDF)",
     }
+
+
+@router.get("/file/{session_id}")
+def download_watermarked_file(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = db.get(DecryptionSession, session_id)
+    if not session or session.recipient_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    document = db.get(Document, session.document_id)
+    path = Path(settings.storage_root) / "decrypted" / f"{session_id}_{document.filename}"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Decrypted file not found on this machine.")
+    return FileResponse(path, filename=document.filename)

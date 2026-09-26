@@ -60,7 +60,7 @@ async def upload_document(
 
     document_id = uuid4().hex
     try:
-        encrypted_package = document_crypto_service.encrypt_for_recipient(data, recipient_id)
+        encrypted_package = document_crypto_service.encrypt_for_recipient(data, recipient_id, document_id)
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

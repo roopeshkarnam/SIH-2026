@@ -38,6 +38,7 @@ def create_provenance(
         recipient_id=current_user.id,
         session_id=session.id,
         watermark_id=session.watermark_id,
+        session_nonce=session.session_nonce,
     )
     signed = provenance_service.sign_record(record, private_key)
 
