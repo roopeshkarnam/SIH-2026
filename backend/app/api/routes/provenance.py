@@ -1,13 +1,10 @@
-import base64
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.database import get_db
 from app.db.models import DecryptionSession, Document, ProvenanceRecord, User
-from app.services.hashing import hashing_service
 from app.services.key_store import key_store
-from app.services.ledger import ledger_service
 from app.services.provenance import provenance_service
 
 router = APIRouter(prefix="/provenance", tags=["Provenance"])
@@ -19,55 +16,20 @@ def create_provenance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """The record is signed during decryption; this returns it (kept for older clients)."""
     session = db.get(DecryptionSession, session_id)
-    if not session:
+    if not session or session.recipient_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found.")
-
-    if session.recipient_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized.")
-
-    document = db.get(Document, session.document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found.")
-
-    private_key = key_store.load_private_key(f"{current_user.id}_sig")
-
-    record = provenance_service.build_record(
-        document_id=document.id,
-        document_hash=document.document_hash,
-        recipient_id=current_user.id,
-        session_id=session.id,
-        watermark_id=session.watermark_id,
-        session_nonce=session.session_nonce,
-    )
-    signed = provenance_service.sign_record(record, private_key)
-
-    transaction_id = ledger_service.commit_provenance(signed)
-
-    db_record = ProvenanceRecord(
-        id=hashing_service.sha256_bytes(
-            f"{session.id}:{session.watermark_id}".encode()
-        )[:64],
-        document_id=document.id,
-        recipient_id=current_user.id,
-        session_id=session.id,
-        watermark_id=session.watermark_id,
-        document_hash=document.document_hash,
-        record_hash=signed["record_hash"],
-        signature=signed["signature"],
-        signature_algorithm=signed["signature_algorithm"],
-        ledger_transaction_id=transaction_id,
-    )
-    db.add(db_record)
-    session.status = "provenance-committed"
-    db.commit()
-
+    record = db.query(ProvenanceRecord).filter_by(session_id=session.id).first()
+    if not record:
+        record = provenance_service.sign_session(db, session, db.get(Document, session.document_id))
+        db.commit()
     return {
-        "watermark_id": session.watermark_id,
-        "record_hash": signed["record_hash"],
-        "signature": signed["signature"],
-        "signature_algorithm": signed["signature_algorithm"],
-        "ledger_transaction_id": transaction_id,
+        "watermark_id": record.watermark_id,
+        "record_hash": record.record_hash,
+        "signature": record.signature,
+        "signature_algorithm": record.signature_algorithm,
+        "ledger_transaction_id": record.ledger_transaction_id,
     }
 
 

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     storage_root: str = "storage"
     key_storage_path: str = "storage/keys"
     max_upload_size_mb: int = 100
+    max_recipients_per_document: int = 100
     pqc_kem_algorithm: str = "ML-KEM-768"
     pqc_signature_algorithm: str = "ML-DSA-65"
     keystore_master_key: str
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
     fabric_gateway_url: str | None = None
     watermark_enabled: bool = True
     frontend_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Built UI folder; the desktop app sets this so the backend serves the UI at /ui/.
+    frontend_dist: str | None = None
     environment: str = "development"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")

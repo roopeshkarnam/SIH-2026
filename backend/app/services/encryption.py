@@ -54,10 +54,14 @@ class EncryptionService:
         ).derive(shared_secret)
 
     @staticmethod
-    def wrap_document_key(document_key: bytes, wrapping_key: bytes) -> dict:
+    def wrap_document_key(
+        document_key: bytes,
+        wrapping_key: bytes,
+        associated_data: bytes = b"SIH-DOCUMENT-KEY",
+    ) -> dict:
         nonce = os.urandom(12)
         ciphertext = AESGCM(wrapping_key).encrypt(
-            nonce, document_key, b"SIH-DOCUMENT-KEY"
+            nonce, document_key, associated_data
         )
         return {
             "nonce": base64.b64encode(nonce).decode(),
@@ -65,11 +69,15 @@ class EncryptionService:
         }
 
     @staticmethod
-    def unwrap_document_key(wrapped_data: dict, wrapping_key: bytes) -> bytes:
+    def unwrap_document_key(
+        wrapped_data: dict,
+        wrapping_key: bytes,
+        associated_data: bytes = b"SIH-DOCUMENT-KEY",
+    ) -> bytes:
         return AESGCM(wrapping_key).decrypt(
             base64.b64decode(wrapped_data["nonce"]),
             base64.b64decode(wrapped_data["ciphertext"]),
-            b"SIH-DOCUMENT-KEY",
+            associated_data,
         )
 
 

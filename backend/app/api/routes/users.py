@@ -11,6 +11,21 @@ from app.services.pqc import pqc_service
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+@router.get("/recipients")
+def list_recipients(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Users who can receive documents (have an ML-KEM public key)."""
+    users = (
+        db.query(User)
+        .filter(User.kem_public_key.isnot(None), User.is_active.is_(True))
+        .order_by(User.username)
+        .all()
+    )
+    return [{"id": u.id, "username": u.username} for u in users]
+
+
 @router.post("/{user_id}/pqc-keys")
 def generate_user_pqc_keys(
     user_id: str,

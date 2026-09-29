@@ -1,0 +1,52 @@
+{
+  "name": "mudra-desktop",
+  "productName": "MUDRA",
+  "version": "1.0.0",
+  "description": "MUDRA offline desktop app",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "dist": "node scripts/build.mjs"
+  },
+  "build": {
+    "appId": "in.techg.mudra",
+    "productName": "MUDRA",
+    "files": [
+      "main.js",
+      "preload.js",
+      "launcher.html",
+      "launcher.js",
+      "logo.png"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend/mudra-server",
+        "to": "backend"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "icon": "resources/icon.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  }
+}

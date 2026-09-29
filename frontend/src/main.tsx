@@ -1,47 +1,45 @@
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Check, Download, Inbox, KeyRound, Lock, LockKeyhole, Search, Send, ShieldCheck, Upload, UserRound } from 'lucide-react'
+import { ArrowRight, Check, Download, FileText, Inbox, Lock, Search, Send, UserRound } from 'lucide-react'
+import '@fontsource/dm-sans/400.css'
+import '@fontsource/dm-sans/500.css'
+import '@fontsource/dm-sans/600.css'
+import '@fontsource/dm-sans/700.css'
+import '@fontsource/space-grotesk/500.css'
+import '@fontsource/space-grotesk/600.css'
+import '@fontsource/space-grotesk/700.css'
 import './styles.css'
+import logo from './assets/mudra-logo.png'
 
-type DocumentItem = { document_id: string; filename: string; document_hash: string; encrypted: boolean; created_at: string }
+type InboxItem = { document_id: string; filename: string; document_hash: string; sender: string; created_at: string }
+type Recipient = { id: string; username: string }
+type Activity = { recipient?: string; event: string; at: string }
+type Layer = { layer: number; name: string; found: boolean; code: string | null; confidence: number; matched?: boolean }
 type Result = Record<string, any>
 type Role = 'sender' | 'recipient' | 'investigator'
-type StepId = 'keys' | 'encrypt' | 'decrypt' | 'sign' | 'trace'
+type StepId = 'keys' | 'encrypt' | 'decrypt' | 'trace'
 
-const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+// Desktop app: the backend serves this UI, so the API is on the same origin.
+// Dev server: the backend runs on port 8000 of the same host.
+const API = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? `http://${location.hostname}:8000` : location.origin)
 
-const ROLES: { id: Role; label: string; icon: any; who: string }[] = [
-  { id: 'sender', label: 'Sender', icon: Send, who: 'You are the office distributing a confidential document.' },
-  { id: 'recipient', label: 'Recipient', icon: Inbox, who: 'You are the officer who receives the document and opens it.' },
-  { id: 'investigator', label: 'Investigator', icon: Search, who: 'A copy of the document has leaked. You find out whose copy it was.' },
+const ACRONYM = [['M', 'ulti-recipient'], ['U', 'ndeniable'], ['D', 'ecryption'], ['R', 'ecord &'], ['A', 'ttribution']]
+
+const ROLES: { id: Role; label: string; icon: any }[] = [
+  { id: 'sender', label: 'Sender', icon: Send },
+  { id: 'recipient', label: 'Recipient', icon: Inbox },
+  { id: 'investigator', label: 'Investigator', icon: Search },
 ]
 
-const STEPS: { id: StepId; role: Role; title: string; plain: string; crypto: string }[] = [
-  {
-    id: 'keys', role: 'recipient', title: 'Create your keys',
-    plain: 'Before anyone can send you a protected file, you need keys: a public "lock" that senders use to seal files for you, and a private key that only you hold to open them. A second key pair lets you sign records.',
-    crypto: 'Generates an ML-KEM-768 key pair (FIPS 203, key encapsulation) and a separate ML-DSA-65 key pair (FIPS 204, signatures). Private keys are stored AES-256-GCM encrypted on the server. Regenerating keys makes files encrypted to the old keys unreadable.',
-  },
-  {
-    id: 'encrypt', role: 'sender', title: 'Encrypt & send a document',
-    plain: 'Choose a file. It is locked with a fresh random key, and that key is sealed with the recipient\'s public lock, so only the recipient can open it.',
-    crypto: 'A new 256-bit AES-GCM key encrypts the file with a random 12-byte nonce. ML-KEM-768 encapsulation against the recipient\'s public key gives a shared secret; HKDF-SHA256, bound to this document ID and recipient ID, turns it into a wrapping key that encrypts the AES key. The SHA-256 hash of the original is stored for integrity checks.',
-  },
-  {
-    id: 'decrypt', role: 'recipient', title: 'Open the document',
-    plain: 'Open the file you were sent. Your copy gets a unique, invisible watermark ID hidden inside it, so if it ever leaks it can be traced back to this exact opening.',
-    crypto: 'ML-KEM decapsulation with your private key recovers the shared secret → HKDF → wrapping key → AES key → file, then the SHA-256 hash is checked. A decryption session is created with a random session nonce and a watermark ID (WM-…), which is written into PDFs as invisible text and metadata.',
-  },
-  {
-    id: 'sign', role: 'recipient', title: 'Sign the access record',
-    plain: 'Create a tamper-proof record of who opened which document and when. It is digitally signed, so any later change to it is detected.',
-    crypto: 'The record (document ID and hash, recipient, session, watermark ID, session nonce, timestamp) is canonicalised and hashed with SHA-256, signed with ML-DSA-65, and committed to the development ledger adapter (Hyperledger Fabric planned).',
-  },
-  {
-    id: 'trace', role: 'investigator', title: 'Trace a leaked copy',
-    plain: 'Upload the leaked PDF. The hidden watermark ID is read out of it and matched against the signed records to show whose copy it was.',
-    crypto: 'The watermark ID is extracted from the PDF text layer and metadata, then looked up among the ML-DSA-signed provenance records. Limitation: this text-layer watermark survives forwarding and re-saving, but not screenshots or print-and-scan.',
-  },
+const STEPS: { id: StepId; role: Role; title: string; hint: string; crypto: string }[] = [
+  { id: 'keys', role: 'recipient', title: 'Keys', hint: 'Post-quantum keys that only you hold.',
+    crypto: 'ML-KEM-768 (FIPS 203) key pair for receiving and ML-DSA-65 (FIPS 204) key pair for signing. Private keys are stored AES-256-GCM encrypted.' },
+  { id: 'encrypt', role: 'sender', title: 'Encrypt & send', hint: 'Encrypted once, sealed separately for each recipient.',
+    crypto: 'One AES-256-GCM encryption of the file, bound to the document ID. One ML-KEM-768 envelope per recipient: fresh encapsulation, HKDF-SHA256 bound to document and recipient, wrapping the document key.' },
+  { id: 'decrypt', role: 'recipient', title: 'Open & sign', hint: 'Your key signs the record before the copy opens. Your copy is marked as yours alone.',
+    crypto: 'Your ML-DSA-65 key signs the access record (document, hash, session, watermark ID, nonce, time) before any plaintext is released. Then your envelope is opened, the file is decrypted and hash-checked, and a copy unique to this opening is made: word-spacing marks, zero-width text marks and an FFT-synchronised image watermark.' },
+  { id: 'trace', role: 'investigator', title: 'Trace leak', hint: 'A PDF, screenshot, photo or pasted text is enough.',
+    crypto: 'Each watermark layer is read independently from the leaked file, screenshot, photo or pasted text and matched to the decryption session and its signed record.' },
 ]
 
 async function api(path: string, options: RequestInit = {}, token?: string) {
@@ -51,14 +49,20 @@ async function api(path: string, options: RequestInit = {}, token?: string) {
   const response = await fetch(`${API}${path}`, { ...options, headers })
   const data = await response.json().catch(() => ({}))
   if (response.status === 401 && token) {
-    // Login expired: sign out and explain why on the login screen.
     localStorage.removeItem('sih_token'); localStorage.setItem('sih_notice', 'Your session expired. Please sign in again.'); location.reload()
   }
   if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`)
   return data
 }
 
+async function blob(path: string, token: string) {
+  const response = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Could not load the file.')
+  return response.blob()
+}
+
 const short = (v: unknown) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > 48 ? `${s.slice(0, 24)}…${s.slice(-12)}` : s }
+const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('sih_token') || '')
@@ -73,20 +77,38 @@ function App() {
   const [role, setRole] = useState<Role>('recipient')
   const [file, setFile] = useState<File | null>(null)
   const [leak, setLeak] = useState<File | null>(null)
-  const [documents, setDocuments] = useState<DocumentItem[]>([])
+  const [pasted, setPasted] = useState('')
+  const [inbox, setInbox] = useState<InboxItem[]>([])
+  const [recipients, setRecipients] = useState<Recipient[]>([])
+  const [chosen, setChosen] = useState<string[]>([])
   const [selectedDocument, setSelectedDocument] = useState('')
-  const [watermark, setWatermark] = useState('')
+  const [pages, setPages] = useState<string[]>([])
+  const [previewText, setPreviewText] = useState<string | null>(null)
+  const [activity, setActivity] = useState<Activity[]>([])
 
   const current = STEPS.find(s => !done[s.id])
 
   useEffect(() => { localStorage.removeItem('sih_notice') }, [])
-  useEffect(() => { if (token) refreshDocuments() }, [token])
-  // Move to whoever acts next.
+  useEffect(() => { if (token) { refreshInbox(); refreshRecipients() } }, [token])
+  // Sending to yourself is the default, so the one-account demo still works.
+  useEffect(() => { if (userId) setChosen([userId]) }, [userId])
   useEffect(() => { if (current) setRole(current.role) }, [current?.id])
+  // The sender sees, live, who opened and downloaded the document.
+  useEffect(() => {
+    const id = done.encrypt?.document_id
+    if (!id) return
+    const load = () => api(`/documents/${id}/activity`, {}, token).then(setActivity).catch(() => {})
+    load(); const timer = setInterval(load, 4000)
+    return () => clearInterval(timer)
+  }, [done.encrypt?.document_id])
 
-  async function refreshDocuments() {
-    try { setDocuments(await api('/documents/mine', {}, token)) } catch (e) { setError((e as Error).message) }
+  async function refreshInbox() {
+    try { setInbox(await api('/documents/inbox', {}, token)) } catch (e) { setError((e as Error).message) }
   }
+  async function refreshRecipients() {
+    try { setRecipients(await api('/users/recipients', {}, token)) } catch (e) { setError((e as Error).message) }
+  }
+  const toggleRecipient = (id: string) => setChosen(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id])
 
   async function submitAuth() {
     setBusy(true); setNotice('')
@@ -102,140 +124,203 @@ function App() {
     } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) }
   }
 
-  function logout() { localStorage.removeItem('sih_token'); setToken(''); setDone({}); setDocuments([]) }
+  function logout() { localStorage.removeItem('sih_token'); setToken(''); restart() }
 
-  // Runs one step; on success the step is marked done with its result.
   async function run(step: StepId, action: () => Promise<Result>) {
     setBusy(true); setError('')
     try { const data = await action(); setDone(d => ({ ...d, [step]: data })) }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
-  const generateKeys = () => run('keys', () => api(`/users/${userId}/pqc-keys`, { method: 'POST' }, token))
-
-  const encrypt = () => run('encrypt', async () => {
-    const form = new FormData(); form.append('file', file!)
-    const data = await api(`/documents/upload?recipient_id=${encodeURIComponent(userId)}`, { method: 'POST', body: form }, token)
-    setSelectedDocument(data.document_id); await refreshDocuments()
+  const generateKeys = () => run('keys', async () => {
+    const data = await api(`/users/${userId}/pqc-keys`, { method: 'POST' }, token)
+    await refreshRecipients()
     return data
   })
 
-  const decrypt = () => run('decrypt', () => api(`/decryption/${selectedDocument}/${userId}`, { method: 'POST' }, token))
-
-  const sign = () => run('sign', () => api(`/provenance/create/${done.decrypt!.session_id}`, { method: 'POST' }, token))
-
-  const trace = () => run('trace', () => {
-    const form = new FormData(); form.append('file', leak!)
-    return api('/forensics/extract', { method: 'POST', body: form }, token)
+  const encrypt = () => run('encrypt', async () => {
+    const form = new FormData(); form.append('file', file!); chosen.forEach(id => form.append('recipient_ids', id))
+    const data = await api('/documents/upload', { method: 'POST', body: form }, token)
+    setSelectedDocument(data.document_id); await refreshInbox()
+    return data
   })
 
-  const lookup = () => run('trace', () => api(`/forensics/lookup/${encodeURIComponent(watermark)}`, {}, token))
+  // Opening shows the watermarked copy straight away; downloading is a separate choice.
+  const decrypt = () => run('decrypt', async () => {
+    const data = await api(`/decryption/${selectedDocument}/${userId}`, { method: 'POST' }, token)
+    if (data.preview === 'text') setPreviewText((await api(`/decryption/${data.session_id}/text`, {}, token)).text)
+    const urls: string[] = []
+    for (let n = 0; n < data.pages; n++) urls.push(URL.createObjectURL(await blob(`/decryption/${data.session_id}/page/${n}`, token)))
+    setPages(urls)
+    return data
+  })
+
+  const trace = () => run('trace', () => {
+    if (leak) { const form = new FormData(); form.append('file', leak); return api('/forensics/extract', { method: 'POST', body: form }, token) }
+    const form = new FormData(); form.append('text', pasted)
+    return api('/forensics/text', { method: 'POST', body: form }, token)
+  })
 
   async function download() {
     try {
-      const response = await fetch(`${API}/decryption/file/${done.decrypt!.session_id}`, { headers: { Authorization: `Bearer ${token}` } })
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Download failed.')
-      const name = documents.find(d => d.document_id === done.decrypt!.document_id)?.filename || 'document.pdf'
-      const link = document.createElement('a'); link.href = URL.createObjectURL(await response.blob()); link.download = `watermarked_${name}`; link.click()
+      const data = await blob(`/decryption/file/${done.decrypt!.session_id}`, token)
+      const link = document.createElement('a'); link.href = URL.createObjectURL(data); link.download = done.decrypt!.filename; link.click()
     } catch (e) { setError((e as Error).message) }
   }
 
-  function restart() { setDone({}); setFile(null); setLeak(null); setWatermark(''); setError('') }
+  function restart() {
+    pages.forEach(URL.revokeObjectURL)
+    setDone({}); setFile(null); setLeak(null); setPasted(''); setError(''); setPages([]); setPreviewText(null); setActivity([]); setChosen(userId ? [userId] : [])
+  }
 
   if (!token) return <Auth mode={mode} setMode={setMode} username={username} setUsername={setUsername} password={password} setPassword={setPassword} submit={submitAuth} busy={busy} message={notice} />
 
+  const nameOf = (id: string) => id === userId ? `${username} (you)` : recipients.find(r => r.id === id)?.username || id
+
   function controls(id: StepId) {
-    if (id === 'keys') return <button className="primary" onClick={generateKeys} disabled={busy}>{busy ? 'Generating…' : 'Generate my keys'} <ArrowRight size={16}/></button>
+    if (id === 'keys') return <button className="primary" onClick={generateKeys} disabled={busy}>{busy ? 'Generating…' : 'Generate keys'} <ArrowRight size={16}/></button>
     if (id === 'encrypt') return <>
-      <label className="drop"><Upload size={22}/><span>{file ? file.name : 'Click to choose a file (PDF works best)'}</span><input type="file" onChange={e => setFile(e.target.files?.[0] || null)}/></label>
-      <button className="primary" onClick={encrypt} disabled={busy || !file}>{busy ? 'Encrypting…' : 'Encrypt & send'} <ArrowRight size={16}/></button>
+      <label className="drop"><FileText size={20}/><span>{file ? file.name : 'Choose a file'}</span><input type="file" onChange={e => setFile(e.target.files?.[0] || null)}/></label>
+      <div className="chips">{recipients.map(r => <button key={r.id} className="chip" data-on={chosen.includes(r.id)} onClick={() => toggleRecipient(r.id)}>
+        {chosen.includes(r.id) && <Check size={13}/>}{r.username}{r.id === userId ? ' (you)' : ''}</button>)}</div>
+      <button className="primary" onClick={encrypt} disabled={busy || !file || !chosen.length}>{busy ? 'Encrypting…' : `Encrypt for ${chosen.length}`} <ArrowRight size={16}/></button>
     </>
     if (id === 'decrypt') return <>
-      <select value={selectedDocument} onChange={e => setSelectedDocument(e.target.value)}><option value="">Choose a document</option>{documents.map(d => <option key={d.document_id} value={d.document_id}>{d.filename}</option>)}</select>
-      <button className="primary" onClick={decrypt} disabled={busy || !selectedDocument}>{busy ? 'Opening…' : 'Open & watermark'} <ArrowRight size={16}/></button>
+      <select value={selectedDocument} onChange={e => setSelectedDocument(e.target.value)}><option value="">Inbox</option>{inbox.map(d => <option key={d.document_id} value={d.document_id}>{d.filename} · {d.sender}</option>)}</select>
+      <button className="primary" onClick={decrypt} disabled={busy || !selectedDocument}>{busy ? 'Signing & opening…' : 'Sign & open'} <ArrowRight size={16}/></button>
     </>
-    if (id === 'sign') return <button className="primary" onClick={sign} disabled={busy}>{busy ? 'Signing…' : 'Sign the record'} <ArrowRight size={16}/></button>
     return <>
-      <label className="drop"><Upload size={22}/><span>{leak ? leak.name : 'Click to choose the leaked PDF (e.g. the copy you downloaded in step 3)'}</span><input type="file" accept="application/pdf" onChange={e => setLeak(e.target.files?.[0] || null)}/></label>
-      <button className="primary" onClick={trace} disabled={busy || !leak}>{busy ? 'Tracing…' : 'Find the source'} <ArrowRight size={16}/></button>
-      <div className="orLookup"><span>or look up an ID directly</span><input value={watermark} onChange={e => setWatermark(e.target.value)} placeholder="WM-…"/><button onClick={lookup} disabled={busy || !watermark}>Look up</button></div>
+      <label className="drop"><Search size={20}/><span>{leak ? leak.name : 'Leaked PDF, screenshot or photo'}</span><input type="file" accept="application/pdf,image/png,image/jpeg,text/plain" onChange={e => { setLeak(e.target.files?.[0] || null); setPasted('') }}/></label>
+      <textarea value={pasted} onChange={e => { setPasted(e.target.value); setLeak(null) }} placeholder="…or paste leaked text"/>
+      <button className="primary" onClick={trace} disabled={busy || (!leak && !pasted.trim())}>{busy ? 'Analysing…' : 'Trace'} <ArrowRight size={16}/></button>
     </>
   }
 
   function summary(id: StepId, r: Result) {
-    if (id === 'keys') return 'ML-KEM-768 and ML-DSA-65 key pairs created'
-    if (id === 'encrypt') return <><b>{r.filename}</b> encrypted with AES-256-GCM and sealed for the recipient</>
-    if (id === 'decrypt') return <>Opened. Watermark <code>{r.watermark_id}</code> {r.watermark_status === 'embedded-in-pdf' ? 'is hidden inside your copy' : 'recorded (not a PDF, so nothing embedded)'}</>
-    if (id === 'sign') return <>Signed with ML-DSA-65 · ledger entry <code>{short(r.ledger_transaction_id)}</code></>
-    return <>Leak traced to <b>{r.recipient_id === userId ? `${username} (you, in demo mode)` : r.recipient_id}</b> · session <code>{short(r.session_id)}</code></>
+    if (id === 'keys') return <>ML-KEM-768 · ML-DSA-65</>
+    if (id === 'encrypt') return <><b>{r.filename}</b> · {r.envelopes_created} envelope{r.envelopes_created === 1 ? '' : 's'}</>
+    if (id === 'decrypt') return <><b>{r.filename}</b> · signed ML-DSA-65 · <code>{r.watermark_id}</code></>
+    return r.matched ? <><b>{nameOf(r.recipient_id)}</b> · <code>{r.watermark_id}</code></> : <>No match</>
   }
 
-  const roleInfo = ROLES.find(r => r.id === role)!
+  function detail(id: StepId, r: Result) {
+    if (id === 'encrypt') return <Feed items={activity}/>
+    if (id === 'decrypt') return <Preview pages={pages} text={previewText} watermark={r.watermark_id} onDownload={download}/>
+    if (id === 'trace') return <TraceResult result={r} nameOf={nameOf}/>
+    return null
+  }
+
   const roleSteps = STEPS.filter(s => s.role === role)
+  const progress = STEPS.filter(s => done[s.id]).length / STEPS.length
 
   return <div className="app">
     <header className="topbar">
-      <div className="brand"><div className="brandMark"><ShieldCheck size={20}/></div><div><strong>CRYPTA</strong><span>Cryptographic Attribution</span></div></div>
+      <div className="brand"><img src={logo} alt=""/><strong>MUDRA</strong></div>
       <nav className="roleTabs">{ROLES.map(r => {
-        const steps = STEPS.filter(s => s.role === r.id)
-        const complete = steps.every(s => done[s.id])
-        const waiting = current?.role === r.id
+        const complete = STEPS.filter(s => s.role === r.id).every(s => done[s.id])
         return <button key={r.id} className="roleTab" data-selected={role === r.id} onClick={() => setRole(r.id)}>
-          <r.icon size={16}/>{r.label}{complete ? <span className="tabDone"><Check size={12}/></span> : waiting ? <span className="tabNow"/> : null}
+          <r.icon size={15}/>{r.label}{complete ? <span className="tabDone"><Check size={11}/></span> : current?.role === r.id ? <span className="tabNow"/> : null}
         </button>
       })}</nav>
-      <div className="who"><UserRound size={16}/><span>{username}</span><button onClick={logout}>Sign out</button></div>
+      <div className="who"><UserRound size={15}/><span>{username}</span><button onClick={logout}>Sign out</button></div>
     </header>
 
     <main className="page">
-      <ol className="journey">{STEPS.map((s, i) => {
+      <p className="acronymLine">{ACRONYM.map(([letter, rest], i) => <span key={letter} style={{ animationDelay: `${i * 90}ms` }}><b>{letter}</b>{rest}</span>)}</p>
+      <ol className="journey" style={{ '--progress': progress } as React.CSSProperties}>{STEPS.map((s, i) => {
         const state = done[s.id] ? 'done' : s.id === current?.id ? 'current' : 'locked'
         return <li key={s.id} data-state={state} onClick={() => setRole(s.role)}>
-          <span className="jDot">{state === 'done' ? <Check size={14}/> : i + 1}</span>
-          <span className="jText"><small>{ROLES.find(r => r.id === s.role)!.label}</small>{s.title}</span>
+          <span className="jDot">{state === 'done' ? <Check size={13}/> : i + 1}</span><span className="jText">{s.title}</span>
         </li>
       })}</ol>
 
-      <p className="demoNote">Demo mode: one account plays all three roles. The page switches to whoever needs to act next; you can click any tab to look around.</p>
-
-      <section className="roleIntro"><roleInfo.icon size={26}/><div><h1>{roleInfo.label}</h1><p>{roleInfo.who}</p></div></section>
-
-      {roleSteps.map(s => {
-        const n = STEPS.indexOf(s) + 1
+      <section className="stepList" key={role}>{roleSteps.map((s, index) => {
         const result = done[s.id]
         const state = result ? 'done' : s.id === current?.id ? 'current' : 'locked'
-        const blocker = current && STEPS.indexOf(current)
-        return <article key={s.id} className="step" data-state={state}>
+        return <article key={s.id} className="step" data-state={state} style={{ animationDelay: `${index * 70}ms` }}>
           <div className="stepHead">
-            <span className="stepBadge">{state === 'done' ? <Check size={16}/> : state === 'locked' ? <Lock size={14}/> : n}</span>
-            <div><small>Step {n}{state === 'done' ? ' · done' : state === 'current' ? ' · your turn' : ''}</small><h2>{s.title}</h2></div>
+            <span className="stepBadge">{state === 'done' ? <Check size={15}/> : state === 'locked' ? <Lock size={13}/> : STEPS.indexOf(s) + 1}</span>
+            <h2>{s.title}</h2>
+            {state === 'done' && <p className="stepSummary">{summary(s.id, result!)}</p>}
           </div>
-          {state === 'done' && <div className="stepSummary">
-            <p>{summary(s.id, result!)}</p>
-            {s.id === 'decrypt' && <button className="secondary" onClick={download}><Download size={15}/> Download your watermarked copy</button>}
-          </div>}
-          {state === 'current' && <div className="stepBody">
-            <p className="plain">{s.plain}</p>
-            {controls(s.id)}
-            {error && <div className="error">{error}</div>}
-          </div>}
-          {state === 'locked' && current && <p className="waiting">Waiting for step {blocker! + 1}: {current.title} ({ROLES.find(r => r.id === current.role)!.label})</p>}
-          {state !== 'locked' && <details className="crypto"><summary>Show crypto details</summary><p>{s.crypto}</p>
-            {result && <dl className="rows">{Object.entries(result).map(([k, v]) => <div key={k}><dt>{k.replace(/_/g, ' ')}</dt><dd title={typeof v === 'string' ? v : JSON.stringify(v)}>{short(v)}</dd></div>)}</dl>}
+          {state !== 'done' && <p className="hint">{s.hint}</p>}
+          {state === 'current' && <div className="stepBody">{controls(s.id)}{error && <div className="error">{error}</div>}</div>}
+          {state === 'done' && detail(s.id, result!)}
+          {state !== 'locked' && <details className="crypto"><summary>Details</summary><p>{s.crypto}</p>
+            {result && <dl className="rows">{Object.entries(result).filter(([, v]) => typeof v !== 'object').map(([k, v]) => <div key={k}><dt>{k.replace(/_/g, ' ')}</dt><dd title={String(v)}>{short(v)}</dd></div>)}</dl>}
           </details>}
         </article>
-      })}
+      })}</section>
 
-      {current && current.role !== role && roleSteps.every(s => done[s.id]) &&
-        <button className="nextRole" onClick={() => setRole(current.role)}>Next: step {STEPS.indexOf(current) + 1}, {current.title}, as {ROLES.find(r => r.id === current.role)!.label} <ArrowRight size={16}/></button>}
+      {role === 'investigator' && <LedgerCheck token={token}/>}
 
-      {!current && <div className="finish"><ShieldCheck size={22}/><div><b>All five steps complete.</b> The leaked copy was traced to the recipient who opened it, backed by a signed record.</div><button className="secondary" onClick={restart}>Run the demo again</button></div>}
+      {!current && <div className="finish"><Check size={18}/><span>Traced to <b>{nameOf(done.trace!.recipient_id)}</b></span><button className="secondary" onClick={restart}>Run again</button></div>}
     </main>
   </div>
 }
 
+function Preview({ pages, text, watermark, onDownload }: { pages: string[]; text: string | null; watermark: string; onDownload: () => void }) {
+  return <div className="preview">
+    <div className="previewBar"><span className="wmBadge">Watermarked · {watermark.slice(0, 11)}…</span><button className="secondary" onClick={onDownload}><Download size={15}/> Download</button></div>
+    {text !== null && <pre className="previewText">{text}</pre>}
+    <div className="pages">{pages.map((src, i) => <img key={src} src={src} alt={`Page ${i + 1}`} style={{ animationDelay: `${i * 90}ms` }}/>)}</div>
+    {!pages.length && text === null && <p className="muted">No preview for this file type.</p>}
+  </div>
+}
+
+function LedgerCheck({ token }: { token: string }) {
+  const [state, setState] = useState<Result | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function check() {
+    setBusy(true)
+    try { setState(await api('/forensics/ledger/verify', {}, token)) } catch (e) { setState({ error: (e as Error).message }) } finally { setBusy(false) }
+  }
+  return <div className="ledger" data-state={state ? (state.intact ? 'ok' : 'bad') : 'idle'}>
+    <div><b>Tamper-evident ledger</b><small>Hash-chained, ML-DSA-65 signed record of every distribution, opening, preview and download.</small></div>
+    {state && !state.error && <span className="ledgerResult">{state.intact ? `Intact · ${state.entries} entries` : `Tampered at entry #${state.broken_at}: ${state.reason}`}</span>}
+    {state?.error && <span className="ledgerResult">{state.error}</span>}
+    <button className="secondary" onClick={check} disabled={busy}>{busy ? 'Verifying…' : 'Verify ledger'}</button>
+  </div>
+}
+
+function Feed({ items }: { items: Activity[] }) {
+  if (!items.length) return <p className="feedEmpty"><span className="pulse"/>Waiting for recipients</p>
+  return <ul className="feed">{items.map((a, i) => <li key={`${a.at}-${a.event}-${i}`}><span className={`event ${a.event}`}>{a.event}</span><b>{a.recipient}</b><time>{time(a.at)}</time></li>)}</ul>
+}
+
+function TraceResult({ result, nameOf }: { result: Result; nameOf: (id: string) => string }) {
+  const layers: Layer[] = result.layers || []
+  return <div className="trace">
+    <ul className="layers">{layers.map(l => <li key={l.layer} data-found={l.found}>
+      <span className="layerNo">L{l.layer}</span><span className="layerName">{l.name}</span>
+      <span className="meter"><span style={{ width: `${Math.round(l.confidence * 100)}%` }}/></span>
+      <span className="layerState">{l.found ? (l.matched === false ? 'no session' : 'found') : '—'}</span>
+    </li>)}</ul>
+    {result.matched && <div className="attribution">
+      <div><small>Recipient</small><b>{nameOf(result.recipient_id)}</b></div>
+      <div><small>Document</small><b>{result.filename}</b></div>
+      <div><small>Signed record</small><b>{result.signed_record ? (result.signature_verified ? 'verified' : 'invalid') : 'not signed'}</b></div>
+      <ul className="feed">{(result.activity || []).map((a: Activity, i: number) => <li key={i}><span className={`event ${a.event}`}>{a.event}</span><time>{time(a.at)}</time></li>)}</ul>
+    </div>}
+  </div>
+}
+
 function Auth({ mode, setMode, username, setUsername, password, setPassword, submit, busy, message }: any) {
-  return <div className="authPage"><div className="authGlow"/><div className="authCard"><div className="brand center"><div className="brandMark"><ShieldCheck size={24}/></div><div><strong>CRYPTA</strong><span>Cryptographic Attribution</span></div></div><p className="eyebrow">SIH 2026 · SECURE ACCESS</p><h1>{mode === 'login' ? 'Enter the secure console' : 'Create recipient access'}</h1><p className="sub">Post-quantum protected document provenance.</p><div className="form"><input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username"/><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" onKeyDown={e => e.key === 'Enter' && submit()}/><button onClick={submit} disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in securely' : 'Create account'} <ArrowRight size={17}/></button></div>{message && <div className="notice">{message}</div>}<button className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Need a recipient account? Register' : 'Already registered? Sign in'}</button><div className="authFoot"><span><LockKeyhole size={14}/> JWT protected</span><span><KeyRound size={14}/> ML-KEM-768</span><span><ShieldCheck size={14}/> ML-DSA-65</span></div></div></div>
+  return <div className="authPage">
+    <div className="ridge" aria-hidden/>
+    <div className="authCard">
+      <img className="authLogo" src={logo} alt="MUDRA"/>
+      <p className="tagline">Every copy knows its owner.</p>
+      <p className="subTagline">Post-quantum encryption · per-recipient watermarks · signed access records</p>
+      <div className="form">
+        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username"/>
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" onKeyDown={e => e.key === 'Enter' && submit()}/>
+        <button className="primary" onClick={submit} disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'} <ArrowRight size={16}/></button>
+      </div>
+      {message && <div className="notice">{message}</div>}
+      <button className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Create an account' : 'I have an account'}</button>
+    </div>
+  </div>
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

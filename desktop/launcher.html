@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>MUDRA</title>
+  <style>
+    :root { --bg: #f6f5ee; --card: #fbfaf6; --line: #dcd8ca; --text: #1c2a21; --muted: #5f6b60; --primary: #2e4a36; --accent: #8ca47a; --soft: #e3eadb; --error: #a5452f }
+    * { box-sizing: border-box }
+    body { margin: 0; padding: 26px 34px; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; animation: rise .6s ease both }
+    header img { width: 54px; height: 54px; border-radius: 50%; object-fit: cover }
+    h1 { margin: 0; font-size: 22px; letter-spacing: .22em; color: var(--primary) }
+    .sub { margin: 2px 0 0; color: var(--muted); font-size: 12px }
+    label.mode { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px; margin-bottom: 10px; cursor: pointer; transition: border-color .2s, background .2s; animation: rise .6s ease both }
+    label.mode:nth-of-type(2) { animation-delay: .07s } label.mode:nth-of-type(3) { animation-delay: .14s }
+    label.mode:has(input:checked) { border-color: var(--primary); background: var(--soft) }
+    label.mode input[type=radio] { margin: 0 8px 0 0; accent-color: var(--primary) }
+    label.mode b { font-size: 15px }
+    label.mode p { margin: 5px 0 0 24px; color: var(--muted); font-size: 13px }
+    code { color: var(--primary); font-weight: 600 }
+    input[type=text] { width: calc(100% - 24px); margin: 10px 0 0 24px; padding: 10px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--text); font: inherit }
+    button { width: 100%; margin-top: 8px; padding: 13px; border: 0; border-radius: 11px; background: var(--primary); color: #f6f5ee; font: 600 15px system-ui, sans-serif; cursor: pointer; transition: transform .15s, background .2s }
+    button:hover:not(:disabled) { background: #3e6149; transform: translateY(-1px) }
+    button:disabled { opacity: .6; cursor: wait }
+    .error { margin-top: 12px; color: var(--error) }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+  </style>
+</head>
+<body>
+  <header><img src="logo.png" alt=""><div><h1>MUDRA</h1><p class="sub">Multi-recipient Undeniable Decryption Record &amp; Attribution</p></div></header>
+
+  <label class="mode"><input type="radio" name="mode" value="local"><b>This computer only</b>
+    <p>Everything runs on this machine. Good for a one-laptop demo.</p></label>
+  <label class="mode"><input type="radio" name="mode" value="host"><b>Host for my team</b>
+    <p>This computer is the server. Teammates on the same Wi-Fi or hotspot choose “Join” and enter: <code id="lan">(no network found)</code><br>Use only a trusted network or your own hotspot.</p></label>
+  <label class="mode"><input type="radio" name="mode" value="join"><b>Join a host</b>
+    <p>Connect to a teammate’s computer that is hosting.</p>
+    <input type="text" id="address" placeholder="Host IP address, e.g. 192.168.1.20"></label>
+
+  <button id="start">Start</button>
+  <div class="error" id="error"></div>
+  <script src="launcher.js"></script>
+</body>
+</html>

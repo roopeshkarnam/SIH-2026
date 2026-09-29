@@ -227,3 +227,20 @@ storage/decrypted/*
 .vite/
 
 frontend/node_modules/
+
+# Local offline deployment: SQLite DB, private keys and encrypted files. Never commit.
+offline/
+
+# Desktop app build output and dependencies
+desktop/node_modules/
+desktop/build/
+desktop/dist/
+!desktop/mudra-server.spec
+
+# macOS
+.DS_Store
+
+# Presentations / reference docs (not code)
+/*.pptx
+/*.pdf
+/*.docx

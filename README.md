@@ -1,8 +1,8 @@
-# CRYPTA: Cryptographic Attribution System
+# MUDRA: Multi-recipient Undeniable Decryption Record & Attribution
 
 **SIH 2026 · Problem 26237:** Cryptographic Attribution and Immutable Decryption Provenance for Multi-Recipient Encrypted Document Distribution.
 
-CRYPTA lets an office send a confidential document so that only the intended recipient can open it. Every opening produces a uniquely watermarked copy and a signed, tamper-evident record. If a copy leaks, an investigator can upload it and find out whose copy it was.
+MUDRA lets an office send a confidential document so that only the intended recipient can open it. Every opening produces a uniquely watermarked copy and a signed, tamper-evident record. If a copy leaks, an investigator can upload it and find out whose copy it was.
 
 All key establishment and signatures use NIST post-quantum standards (ML-KEM, ML-DSA).
 

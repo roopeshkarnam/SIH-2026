@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, crypto, decryption, documents, forensics, health, provenance, users
 from app.core.config import settings
@@ -29,6 +30,9 @@ app.include_router(documents.router)
 app.include_router(decryption.router)
 app.include_router(provenance.router)
 app.include_router(forensics.router)
+
+if settings.frontend_dist:
+    app.mount("/ui", StaticFiles(directory=settings.frontend_dist, html=True), name="ui")
 
 
 @app.get("/")

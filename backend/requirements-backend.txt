@@ -1,1 +1,5 @@
 -r ../requirements.txt
+
+# Test-only
+pytest
+httpx

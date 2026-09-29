@@ -13,4 +13,4 @@ cryptography
 pqcrypto
 pymupdf
 opencv-python
-numpy
+numpypymupdf-fonts
