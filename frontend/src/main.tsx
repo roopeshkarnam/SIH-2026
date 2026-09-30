@@ -86,13 +86,20 @@ function App() {
   const [previewText, setPreviewText] = useState<string | null>(null)
   const [activity, setActivity] = useState<Activity[]>([])
 
-  const current = STEPS.find(s => !done[s.id])
+  // Steps are independent: anyone can send, receiving only needs your keys, anyone can trace.
+  const stateOf = (id: StepId) => done[id] ? 'done' : id === 'decrypt' && !done.keys ? 'locked' : 'current'
+  const hasKeys = recipients.some(r => r.id === userId)
 
   useEffect(() => { localStorage.removeItem('sih_notice') }, [])
   useEffect(() => { if (token) { refreshInbox(); refreshRecipients() } }, [token])
-  // Sending to yourself is the default, so the one-account demo still works.
-  useEffect(() => { if (userId) setChosen([userId]) }, [userId])
-  useEffect(() => { if (current) setRole(current.role) }, [current?.id])
+  // Keys already on record count as done: generating again would lock you out of earlier documents.
+  // Sending to yourself is the default when you can receive, so the one-account demo still works.
+  useEffect(() => {
+    if (!hasKeys) return
+    setDone(d => d.keys ? d : { ...d, keys: { status: 'existing keys' } })
+    setChosen(c => c.length ? c : [userId])
+  }, [hasKeys])
+  useEffect(() => { if (token && role === 'recipient') refreshInbox(); if (token && role === 'sender') refreshRecipients() }, [role])
   // The sender sees, live, who opened and downloaded the document.
   useEffect(() => {
     const id = done.encrypt?.document_id
@@ -170,7 +177,7 @@ function App() {
 
   function restart() {
     pages.forEach(URL.revokeObjectURL)
-    setDone({}); setFile(null); setLeak(null); setPasted(''); setError(''); setPages([]); setPreviewText(null); setActivity([]); setChosen(userId ? [userId] : [])
+    setDone(d => d.keys ? { keys: d.keys } : {}); setFile(null); setLeak(null); setPasted(''); setError(''); setPages([]); setPreviewText(null); setActivity([]); setChosen(hasKeys ? [userId] : [])
   }
 
   if (!token) return <Auth mode={mode} setMode={setMode} username={username} setUsername={setUsername} password={password} setPassword={setPassword} submit={submitAuth} busy={busy} message={notice} />
@@ -186,7 +193,7 @@ function App() {
       <button className="primary" onClick={encrypt} disabled={busy || !file || !chosen.length}>{busy ? 'Encrypting…' : `Encrypt for ${chosen.length}`} <ArrowRight size={16}/></button>
     </>
     if (id === 'decrypt') return <>
-      <select value={selectedDocument} onChange={e => setSelectedDocument(e.target.value)}><option value="">Inbox</option>{inbox.map(d => <option key={d.document_id} value={d.document_id}>{d.filename} · {d.sender}</option>)}</select>
+      <select value={selectedDocument} onFocus={refreshInbox} onChange={e => setSelectedDocument(e.target.value)}><option value="">Inbox</option>{inbox.map(d => <option key={d.document_id} value={d.document_id}>{d.filename} · {d.sender}</option>)}</select>
       <button className="primary" onClick={decrypt} disabled={busy || !selectedDocument}>{busy ? 'Signing & opening…' : 'Sign & open'} <ArrowRight size={16}/></button>
     </>
     return <>
@@ -219,7 +226,7 @@ function App() {
       <nav className="roleTabs">{ROLES.map(r => {
         const complete = STEPS.filter(s => s.role === r.id).every(s => done[s.id])
         return <button key={r.id} className="roleTab" data-selected={role === r.id} onClick={() => setRole(r.id)}>
-          <r.icon size={15}/>{r.label}{complete ? <span className="tabDone"><Check size={11}/></span> : current?.role === r.id ? <span className="tabNow"/> : null}
+          <r.icon size={15}/>{r.label}{complete && <span className="tabDone"><Check size={11}/></span>}
         </button>
       })}</nav>
       <div className="who"><UserRound size={15}/><span>{username}</span><button onClick={logout}>Sign out</button></div>
@@ -228,7 +235,7 @@ function App() {
     <main className="page">
       <p className="acronymLine">{ACRONYM.map(([letter, rest], i) => <span key={letter} style={{ animationDelay: `${i * 90}ms` }}><b>{letter}</b>{rest}</span>)}</p>
       <ol className="journey" style={{ '--progress': progress } as React.CSSProperties}>{STEPS.map((s, i) => {
-        const state = done[s.id] ? 'done' : s.id === current?.id ? 'current' : 'locked'
+        const state = stateOf(s.id)
         return <li key={s.id} data-state={state} onClick={() => setRole(s.role)}>
           <span className="jDot">{state === 'done' ? <Check size={13}/> : i + 1}</span><span className="jText">{s.title}</span>
         </li>
@@ -236,7 +243,7 @@ function App() {
 
       <section className="stepList" key={role}>{roleSteps.map((s, index) => {
         const result = done[s.id]
-        const state = result ? 'done' : s.id === current?.id ? 'current' : 'locked'
+        const state = stateOf(s.id)
         return <article key={s.id} className="step" data-state={state} style={{ animationDelay: `${index * 70}ms` }}>
           <div className="stepHead">
             <span className="stepBadge">{state === 'done' ? <Check size={15}/> : state === 'locked' ? <Lock size={13}/> : STEPS.indexOf(s) + 1}</span>
@@ -254,7 +261,7 @@ function App() {
 
       {role === 'investigator' && <LedgerCheck token={token}/>}
 
-      {!current && <div className="finish"><Check size={18}/><span>Traced to <b>{nameOf(done.trace!.recipient_id)}</b></span><button className="secondary" onClick={restart}>Run again</button></div>}
+      {done.trace?.matched && <div className="finish"><Check size={18}/><span>Traced to <b>{nameOf(done.trace!.recipient_id)}</b></span><button className="secondary" onClick={restart}>Run again</button></div>}
     </main>
   </div>
 }
